@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YOLO Waste Sorter Prototype</title>
+
+    <!-- Socket.IO client -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #f4f4f9;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: #222;
+        }
+
+        h1 {
+            margin: 8px 0 12px;
+            text-align: center;
+        }
+
+        #simulation-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 90%;
+            max-width: 1000px;
+            padding: 20px;
+            background: #fff;
+            border: 2px solid #333;
+            position: relative;
+            margin-top: 140px;
+            min-height: 120px;
+        }
+
+        #stations-wrapper {
+            position: absolute;
+            top: -125px;
+            left: 160px;
+            right: 160px;
+            height: 120px;
+            display: flex;
+            justify-content: space-around;
+            align-items: flex-end;
+            pointer-events: none;
+        }
+
+        .station {
+            width: 110px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .station-title {
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .bin {
+            width: 88px;
+            height: 62px;
+            border: 3px solid #333;
+            border-bottom: none;
+            border-radius: 6px 6px 0 0;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            line-height: 1.15;
+            padding: 4px;
+            font-size: 13px;
+        }
+
+        .box {
+            border: 3px solid #333;
+            background: #fff;
+            padding: 14px;
+            min-width: 128px;
+            text-align: center;
+        }
+
+        .sub {
+            font-size: 12px;
+            color: #666;
+        }
+
+        #conveyor-container {
+            flex: 1;
+            height: 60px;
+            margin: 0 12px;
+            position: relative;
+            overflow: hidden;
+            border-top: 3px solid #333;
+            border-bottom: 3px solid #333;
+            background: repeating-linear-gradient(
+                90deg,
+                #ddd,
+                #ddd 10px,
+                #bbb 10px,
+                #bbb 20px
+            );
+            animation: move-belt 0.9s linear infinite;
+        }
+
+        @keyframes move-belt {
+            from { background-position: 0 0; }
+            to   { background-position: 20px 0; }
+        }
+
+        .waste-item {
+            width: 40px;
+            height: 40px;
+            position: absolute;
+            left: 0;
+            top: 10px;
+            border-radius: 8px;
+            border: 3px solid rgba(0, 0, 0, 0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-weight: bold;
+            font-size: 12px;
+            transition: top 0.25s ease, opacity 0.25s ease;
+            user-select: none;
+        }
+
+        .type-recycle   { background: #2196F3; }
+        .type-wet       { background: #4CAF50; }
+        .type-hazardous { background: #F44336; }
+        .type-general   { background: #9E9E9E; }
+
+        #status-panel {
+            width: 90%;
+            max-width: 1000px;
+            margin-top: 14px;
+            display: grid;
+            gap: 8px;
+        }
+
+        .status-box {
+            background: #fff;
+            border: 1px solid #ccc;
+            padding: 8px 10px;
+            font-family: Consolas, monospace;
+            font-size: 13px;
+            word-break: break-word;
+        }
+
+        .controls {
+            width: 90%;
+            max-width: 1000px;
+            margin-top: 10px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        button {
+            border: 1px solid #777;
+            background: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        button:hover { background: #f0f0f0; }
+
+        .note {
+            margin-top: 8px;
+            color: #666;
+            font-size: 12px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>YOLO Waste Sorter Prototype</h1>
+
+    <div id="simulation-container">
+        <!-- Top bins -->
+        <div id="stations-wrapper">
+            <div class="station" id="station-recycle">
+                <div class="station-title">Recycle</div>
+                <div class="bin">Count: <span id="count-recycle">0</span></div>
+            </div>
+
+            <div class="station" id="station-wet">
+                <div class="station-title">Wet</div>
+                <div class="bin">Count: <span id="count-wet">0</span></div>
+            </div>
+
+            <div class="station" id="station-hazardous">
+                <div class="station-title">Hazardous</div>
+                <div class="bin">Count: <span id="count-hazardous">0</span></div>
+            </div>
+        </div>
+
+        <!-- Input camera box -->
+        <div class="box">
+            <div><b>Input Cam</b></div>
+            <div id="cam-status" class="sub" style="color: green;">● Prototype Mode</div>
+        </div>
+
+        <!-- Conveyor -->
+        <div id="conveyor-container"></div>
+
+        <!-- General box -->
+        <div class="box">
+            <div><b>General</b></div>
+            <div>Count: <span id="count-general">0</span></div>
+        </div>
+    </div>
+
+    <div id="status-panel">
+        <div id="connection-status" class="status-box">Socket: Connecting...</div>
+        <div id="log" class="status-box">Waiting for detection...</div>
+        <div id="zone-debug" class="status-box">Zones: calculating...</div>
+    </div>
+
+    <div class="controls">
+        <!-- Manual test buttons (useful even if server not sending) -->
+        <button onclick="generateWaste('recycle', 'manual_bottle')">Test Recycle</button>
+        <button onclick="generateWaste('wet', 'manual_peel')">Test Wet</button>
+        <button onclick="generateWaste('hazardous', 'manual_battery')">Test Hazardous</button>
+        <button onclick="generateWaste('general', 'manual_tissue')">Test General</button>
+        <button onclick="resetCounters()">Reset Counters</button>
+    </div>
+
+    <div class="note">
+        Flask server simulates detections and sends them to this page via Socket.IO.
+    </div>
+
+    <script>
+        // -----------------------------
+        // Socket.IO connection
+        // -----------------------------
+        const connectionStatusEl = document.getElementById("connection-status");
+        const logEl = document.getElementById("log");
+        const zoneDebugEl = document.getElementById("zone-debug");
+
+        const socket = io({
+            transports: ["websocket", "polling"]
+        });
+
+        socket.on("connect", () => {
+            connectionStatusEl.textContent = `Socket: Connected (id=${socket.id})`;
+        });
+
+        socket.on("disconnect", () => {
+            connectionStatusEl.textContent = "Socket: Disconnected";
+        });
+
+        socket.on("connect_error", (err) => {
+            connectionStatusEl.textContent = "Socket Error: " + err.message;
+        });
+
+        socket.on("trash_detected", (data) => {
+            const conf = (typeof data.confidence === "number")
+                ? ` (${Math.round(data.confidence * 100)}%)`
+                : "";
+            logEl.textContent = `Last Detection: ${data.object_name}${conf} -> ${data.bin_type}`;
+            generateWaste(data.bin_type, data.object_name);
+        });
+
+        // -----------------------------
+        // Conveyor simulation state
+        // -----------------------------
+        const conveyorContainer = document.getElementById("conveyor-container");
+        const conveyorSpeed = 2.0; // px per frame
+        const itemWidth = 40;
+
+        let wasteItems = [];
+        let nextId = 1;
+
+        const counters = {
+            recycle: 0,
+            wet: 0,
+            hazardous: 0,
+            general: 0
+        };
+
+        const zones = {
+            recycle: { start: 50, end: 120 },
+            wet: { start: 200, end: 270 },
+            hazardous: { start: 350, end: 420 }
+        };
+
+        function updateCounterDisplay(binType) {
+            document.getElementById(`count-${binType}`).textContent = counters[binType];
+        }
+
+        function resetCounters() {
+            counters.recycle = 0;
+            counters.wet = 0;
+            counters.hazardous = 0;
+            counters.general = 0;
+
+            updateCounterDisplay("recycle");
+            updateCounterDisplay("wet");
+            updateCounterDisplay("hazardous");
+            updateCounterDisplay("general");
+        }
+
+        function normalizeBinType(type) {
+            if (["recycle", "wet", "hazardous", "general"].includes(type)) return type;
+            return "general";
+        }
+
+        function shortLabel(name) {
+            // e.g. plastic_bottle -> PLA
+            const clean = String(name || "item").replace(/[^a-zA-Z0-9]/g, "");
+            return clean.substring(0, 3).toUpperCase() || "ITM";
+        }
+
+        function generateWaste(type, label) {
+            type = normalizeBinType(type);
+
+            const el = document.createElement("div");
+            el.className = `waste-item type-${type}`;
+            el.textContent = shortLabel(label);
+
+            conveyorContainer.appendChild(el);
+
+            wasteItems.push({
+                id: nextId++,
+                element: el,
+                position: 0,
+                type: type,
+                active: true,
+                collected: false
+            });
+        }
+
+        function stationCenterXRelativeToConveyor(stationId) {
+            const stationEl = document.getElementById(stationId);
+            const stationRect = stationEl.getBoundingClientRect();
+            const conveyorRect = conveyorContainer.getBoundingClientRect();
+
+            // Convert station center X into conveyor-local X coordinate
+            return (stationRect.left + stationRect.width / 2) - conveyorRect.left;
+        }
+
+        function recalculateZones() {
+            const conveyorWidth = conveyorContainer.offsetWidth;
+            if (!conveyorWidth) return;
+
+            const halfWidth = 35; // width of "push zone"
+
+            const recycleCenter = stationCenterXRelativeToConveyor("station-recycle");
+            const wetCenter = stationCenterXRelativeToConveyor("station-wet");
+            const hazardousCenter = stationCenterXRelativeToConveyor("station-hazardous");
+
+            zones.recycle = {
+                start: Math.max(0, recycleCenter - halfWidth),
+                end: Math.min(conveyorWidth, recycleCenter + halfWidth),
+            };
+            zones.wet = {
+                start: Math.max(0, wetCenter - halfWidth),
+                end: Math.min(conveyorWidth, wetCenter + halfWidth),
+            };
+            zones.hazardous = {
+                start: Math.max(0, hazardousCenter - halfWidth),
+                end: Math.min(conveyorWidth, hazardousCenter + halfWidth),
+            };
+
+            zoneDebugEl.textContent =
+                `Zones | recycle: ${Math.round(zones.recycle.start)}-${Math.round(zones.recycle.end)} | ` +
+                `wet: ${Math.round(zones.wet.start)}-${Math.round(zones.wet.end)} | ` +
+                `hazardous: ${Math.round(zones.hazardous.start)}-${Math.round(zones.hazardous.end)}`;
+        }
+
+        function collectItem(item, binType) {
+            if (!item || !item.active || item.collected) return;
+
+            item.collected = true;
+            item.active = false;
+
+            if (binType !== "general") {
+                item.element.style.top = "-50px";   // fly upward into top bin
+                item.element.style.opacity = "0";
+            } else {
+                item.element.style.opacity = "0";   // disappear at end into general
+            }
+
+            counters[binType] += 1;
+            updateCounterDisplay(binType);
+
+            // Safe removal by unique ID
+            setTimeout(() => {
+                if (item.element && item.element.parentNode) {
+                    item.element.remove();
+                }
+                wasteItems = wasteItems.filter(w => w.id !== item.id);
+            }, 250);
+        }
+
+        function gameLoop() {
+            const conveyorWidth = conveyorContainer.offsetWidth;
+
+            // Iterate backwards for safer handling
+            for (let i = wasteItems.length - 1; i >= 0; i--) {
+                const item = wasteItems[i];
+                if (!item.active) continue;
+
+                item.position += conveyorSpeed;
+                item.element.style.left = item.position + "px";
+
+                // Auto-sort to special bin when entering matching zone
+                if (zones[item.type]) {
+                    const z = zones[item.type];
+                    if (item.position > z.start && item.position < z.end) {
+                        collectItem(item, item.type);
+                        continue;
+                    }
+                }
+
+                // End of conveyor -> General
+                if (item.position > (conveyorWidth - itemWidth)) {
+                    collectItem(item, "general");
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Init
+        window.addEventListener("load", () => {
+            recalculateZones();
+            requestAnimationFrame(gameLoop);
+        });
+
+        window.addEventListener("resize", recalculateZones);
+    </script>
+</body>
+</html>
