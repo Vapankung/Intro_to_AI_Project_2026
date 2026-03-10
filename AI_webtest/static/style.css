@@ -1,0 +1,83 @@
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f4f6f8;
+    color: #222;
+}
+
+.page {
+    max-width: 1200px;
+    margin: 30px auto;
+    padding: 20px;
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 25px;
+}
+
+.dashboard {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+    /* Allows elements to wrap on smaller screens */
+    flex-wrap: wrap; 
+}
+
+.video-panel {
+    flex: 2;
+    /* Ensure it doesn't shrink below a usable size before wrapping */
+    min-width: 300px; 
+    background: white;
+    padding: 16px;
+    border-radius: 16px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+.video-panel img {
+    width: 100%;
+    border-radius: 12px;
+    display: block;
+    /* Keeps aspect ratio correct */
+    object-fit: cover; 
+}
+
+.info-panel {
+    flex: 1;
+    min-width: 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.card {
+    background: white;
+    padding: 18px;
+    border-radius: 16px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+.card h2 {
+    margin-top: 0;
+    margin-bottom: 14px;
+}
+
+#object-list {
+    padding-left: 20px;
+    margin: 0;
+}
+
+#object-list li {
+    margin-bottom: 8px;
+}
+
+/* Make it stack vertically on mobile screens */
+@media (max-width: 768px) {
+    .dashboard {
+        flex-direction: column;
+    }
+    .video-panel, .info-panel {
+        width: 100%;
+        box-sizing: border-box;
+    }
+}

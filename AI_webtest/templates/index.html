@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YOLO Live Detection Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="page">
+        <h1>YOLO Live Detection Dashboard</h1>
+
+        <div class="dashboard">
+            <div class="video-panel">
+                <img src="{{ url_for('video_feed') }}" alt="Live video stream">
+            </div>
+
+            <div class="info-panel">
+                <div class="card">
+                    <h2>Current Detection</h2>
+                    <p><strong>Top label:</strong> <span id="top-label">None</span></p>
+                    <p><strong>Top confidence:</strong> <span id="top-conf">0.000</span></p>
+                    <p><strong>Object count:</strong> <span id="object-count">0</span></p>
+                    <p><strong>FPS:</strong> <span id="fps">0.00</span></p>
+                </div>
+
+                <div class="card">
+                    <h2>Detected Objects</h2>
+                    <ul id="object-list">
+                        <li>No objects detected</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function updateDetections() {
+            try {
+                const response = await fetch("/detections");
+                const data = await response.json();
+
+                document.getElementById("top-label").textContent = data.top_label;
+                document.getElementById("top-conf").textContent = data.top_conf;
+                document.getElementById("object-count").textContent = data.object_count;
+                document.getElementById("fps").textContent = data.fps;
+
+                const objectList = document.getElementById("object-list");
+                objectList.innerHTML = "";
+
+                if (data.objects.length === 0) {
+                    const li = document.createElement("li");
+                    li.textContent = "No objects detected";
+                    objectList.appendChild(li);
+                } else {
+                    data.objects.forEach(obj => {
+                        const li = document.createElement("li");
+                        li.textContent = `${obj.label} (${obj.confidence})`;
+                        objectList.appendChild(li);
+                    });
+                }
+            } catch (error) {
+                console.error("Failed to fetch detections:", error);
+            }
+        }
+
+        // Reduced from 500ms to 200ms for a more "real-time" snappy feel
+        setInterval(updateDetections, 200);
+        updateDetections();
+    </script>
+</body>
+</html>
