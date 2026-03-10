@@ -3,25 +3,81 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YOLO Live Detection Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>COCO Waste Demo</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            color: #222;
+        }
+        .page {
+            max-width: 1200px;
+            margin: 30px auto;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        .dashboard {
+            display: flex;
+            gap: 24px;
+            align-items: flex-start;
+        }
+        .video-panel {
+            flex: 2;
+            background: white;
+            padding: 16px;
+            border-radius: 16px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+        }
+        .video-panel img {
+            width: 100%;
+            border-radius: 12px;
+            display: block;
+        }
+        .info-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .card {
+            background: white;
+            padding: 18px;
+            border-radius: 16px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+        }
+        .waste-box {
+            font-size: 28px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        ul {
+            padding-left: 20px;
+        }
+    </style>
 </head>
 <body>
     <div class="page">
-        <h1>YOLO Live Detection Dashboard</h1>
+        <h1>Smart Waste Demo with COCO YOLO</h1>
 
         <div class="dashboard">
             <div class="video-panel">
-                <img src="{{ url_for('video_feed') }}" alt="Live video stream">
+                <img src="/video_feed" alt="Live stream">
             </div>
 
             <div class="info-panel">
                 <div class="card">
                     <h2>Current Detection</h2>
-                    <p><strong>Top label:</strong> <span id="top-label">None</span></p>
-                    <p><strong>Top confidence:</strong> <span id="top-conf">0.000</span></p>
+                    <p><strong>Detected object:</strong> <span id="top-label">None</span></p>
+                    <p><strong>Confidence:</strong> <span id="top-conf">0</span></p>
                     <p><strong>Object count:</strong> <span id="object-count">0</span></p>
-                    <p><strong>FPS:</strong> <span id="fps">0.00</span></p>
+                    <p><strong>FPS:</strong> <span id="fps">0</span></p>
+                    <div class="waste-box">
+                        Bin Type: <span id="waste-type">Unknown</span>
+                    </div>
                 </div>
 
                 <div class="card">
@@ -44,6 +100,7 @@
                 document.getElementById("top-conf").textContent = data.top_conf;
                 document.getElementById("object-count").textContent = data.object_count;
                 document.getElementById("fps").textContent = data.fps;
+                document.getElementById("waste-type").textContent = data.waste_type;
 
                 const objectList = document.getElementById("object-list");
                 objectList.innerHTML = "";
@@ -55,17 +112,16 @@
                 } else {
                     data.objects.forEach(obj => {
                         const li = document.createElement("li");
-                        li.textContent = `${obj.label} (${obj.confidence})`;
+                        li.textContent = `${obj.label} → ${obj.waste_type} (${obj.confidence})`;
                         objectList.appendChild(li);
                     });
                 }
-            } catch (error) {
-                console.error("Failed to fetch detections:", error);
+            } catch (err) {
+                console.error(err);
             }
         }
 
-        // Reduced from 500ms to 200ms for a more "real-time" snappy feel
-        setInterval(updateDetections, 200);
+        setInterval(updateDetections, 500);
         updateDetections();
     </script>
 </body>
