@@ -21,11 +21,16 @@ CONFIDENCE_THRESHOLD = 0.5
 
 # Map YOLO classes -> bin types used by HTML
 YOLO_MAPPING = {
-    "plastic_bottle": "recycle",
+    "glass_bottle": "recycle",
     "can": "recycle",
+    "paper": "recycle",
+    "plastic_bottle": "recycle",
     "apple_core": "wet",
     "banana_peel": "wet",
     "battery": "hazardous",
+    "electronic": "hazardous",
+    "light_bulb": "hazardous",
+    "syring": "hazardous",
     "tissue": "general",
 }
 
