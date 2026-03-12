@@ -1,4 +1,4 @@
-from flask import Flask, render_template, Response
+from flask import Flask, render_template, Response, jsonify
 from flask_socketio import SocketIO
 from ultralytics import YOLO
 import cv2
@@ -18,7 +18,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 # -----------------------------
 PORT = 50000
 SIMULATION_MODE = False
-DETECTION_INTERVAL_SEC = 0.05
+DETECTION_INTERVAL_SEC = 0.08
 CONFIDENCE_THRESHOLD = 0.45
 MODEL_PATH = "best_test.pt"
 IMGSZ = 416
@@ -46,7 +46,6 @@ MAX_CONSECUTIVE_READ_FAILURES = 30
 # YOLO object -> waste bin
 # -----------------------------
 YOLO_MAPPING = {
-
     # recycle
     "Glass Bottle": "recycle",
     "Plastic Bottle": "recycle",
@@ -81,8 +80,12 @@ cap = None
 
 latest_jpeg = None
 frame_lock = threading.Lock()
+camera_lock = threading.Lock()
 
 processed_track_ids = set()
+
+selected_camera_index = 0
+selected_camera_backend = cv2.CAP_DSHOW
 
 # -----------------------------
 # Routes
@@ -91,13 +94,17 @@ processed_track_ids = set()
 def index():
     return render_template("index.html")
 
+
 @app.route("/health")
 def health():
     return {
         "status": "ok",
         "mode": "simulation" if SIMULATION_MODE else "real_tracking",
-        "model": MODEL_PATH
+        "model": MODEL_PATH,
+        "selected_camera_index": selected_camera_index,
+        "selected_camera_backend": backend_name(selected_camera_backend),
     }
+
 
 @app.route("/video_feed")
 def video_feed():
@@ -105,6 +112,75 @@ def video_feed():
         mjpeg_generator(),
         mimetype="multipart/x-mixed-replace; boundary=frame"
     )
+
+
+@app.route("/available_cameras")
+def available_cameras():
+    found = []
+    seen = set()
+
+    for idx in range(5):
+        for backend in [cv2.CAP_DSHOW, cv2.CAP_MSMF, None]:
+            test_cap = None
+            try:
+                if backend is None:
+                    test_cap = cv2.VideoCapture(idx)
+                else:
+                    test_cap = cv2.VideoCapture(idx, backend)
+
+                if not test_cap.isOpened():
+                    release_camera(test_cap)
+                    continue
+
+                test_cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+                test_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+                time.sleep(0.25)
+
+                ok, frame = try_read_valid_frame(
+                    test_cap,
+                    retries=3,
+                    delay=0.05
+                )
+
+                if ok and frame is not None and frame.size > 0:
+                    key = (idx, backend_name(backend))
+                    if key not in seen:
+                        seen.add(key)
+                        found.append({
+                            "index": idx,
+                            "backend": backend_name(backend),
+                            "label": f"Camera {idx} ({backend_name(backend)})"
+                        })
+
+                release_camera(test_cap)
+
+            except Exception:
+                release_camera(test_cap)
+
+    return jsonify({"cameras": found})
+
+
+@app.route("/camera_test")
+def camera_test():
+    global cap
+
+    with camera_lock:
+        current_cap = cap
+
+    if current_cap is None:
+        return {"ok": False, "message": "Camera not initialized"}
+
+    ok, frame = current_cap.read()
+    if not ok or frame is None or frame.size == 0:
+        return {"ok": False, "message": "Camera opened but frame read failed"}
+
+    h, w = frame.shape[:2]
+    return {
+        "ok": True,
+        "message": f"Camera working: {w}x{h}",
+        "selected_camera_index": selected_camera_index,
+        "selected_camera_backend": backend_name(selected_camera_backend)
+    }
 
 # -----------------------------
 # Socket events
@@ -114,12 +190,49 @@ def on_connect():
     print("[SocketIO] Client connected", flush=True)
     socketio.emit("system_status", {
         "ok": True,
-        "message": "Prototype Mode" if SIMULATION_MODE else "YOLO Tracker Live"
+        "message": "Prototype Mode" if SIMULATION_MODE else "YOLO Tracker Live",
+        "camera_index": selected_camera_index,
+        "backend": backend_name(selected_camera_backend)
     })
+
 
 @socketio.on("disconnect")
 def on_disconnect():
     print("[SocketIO] Client disconnected", flush=True)
+
+
+@socketio.on("select_camera")
+def handle_select_camera(data):
+    try:
+        camera_index = int(data.get("camera_index", 0))
+        backend_str = str(data.get("backend", "CAP_DSHOW")).upper()
+
+        if backend_str == "CAP_DSHOW":
+            backend = cv2.CAP_DSHOW
+        elif backend_str == "CAP_MSMF":
+            backend = cv2.CAP_MSMF
+        elif backend_str == "AUTO":
+            backend = None
+        else:
+            backend = cv2.CAP_DSHOW
+            backend_str = "CAP_DSHOW"
+
+        print(f"[CAMERA] User requested switch to index={camera_index}, backend={backend_str}", flush=True)
+
+        success = switch_camera(camera_index, backend)
+
+        socketio.emit("camera_switched", {
+            "success": success,
+            "camera_index": camera_index,
+            "backend": backend_name(backend)
+        })
+
+    except Exception as e:
+        print(f"[CAMERA] Camera selection error: {e}", flush=True)
+        socketio.emit("camera_switched", {
+            "success": False,
+            "error": str(e)
+        })
 
 # -----------------------------
 # Helpers
@@ -161,45 +274,58 @@ def try_read_valid_frame(camera, retries=CAMERA_READ_RETRIES, delay=CAMERA_RETRY
     return False, None
 
 
-def open_camera():
+def open_camera(camera_index=None, backend=None):
     """
-    Open a webcam using several index/backend combinations.
+    Open a webcam using either a specific index/backend
+    or fall back to CAMERA_CANDIDATES.
     """
-    for idx, backend in CAMERA_CANDIDATES:
-        try:
-            print(f"[CAMERA] Trying index={idx}, backend={backend_name(backend)}", flush=True)
+    if camera_index is not None:
+        candidates = [(camera_index, backend)]
+        if backend is not None:
+            candidates.append((camera_index, None))
+    else:
+        candidates = CAMERA_CANDIDATES
 
-            if backend is None:
+    for idx, be in candidates:
+        test_cap = None
+        try:
+            print(f"[CAMERA] Trying index={idx}, backend={backend_name(be)}", flush=True)
+
+            if be is None:
                 test_cap = cv2.VideoCapture(idx)
             else:
-                test_cap = cv2.VideoCapture(idx, backend)
+                test_cap = cv2.VideoCapture(idx, be)
 
             if not test_cap.isOpened():
-                print(f"[CAMERA] isOpened() failed for index={idx}, backend={backend_name(backend)}", flush=True)
+                print(f"[CAMERA] isOpened() failed for index={idx}, backend={backend_name(be)}", flush=True)
                 release_camera(test_cap)
                 continue
 
-            # Set resolution early
             test_cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
             test_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
 
-            # Warm up camera
             time.sleep(CAMERA_WARMUP_SEC)
 
             ok, frame = try_read_valid_frame(test_cap)
             if ok:
                 h, w = frame.shape[:2]
+                actual_w = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                actual_h = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                actual_fps = test_cap.get(cv2.CAP_PROP_FPS)
+
                 print(
-                    f"[CAMERA] Opened successfully index={idx}, backend={backend_name(backend)}, frame={w}x{h}",
+                    f"[CAMERA] Opened successfully index={idx}, backend={backend_name(be)}, "
+                    f"frame={w}x{h}, negotiated={actual_w}x{actual_h}, fps={actual_fps:.2f}",
                     flush=True
                 )
                 return test_cap
 
-            print(f"[CAMERA] Opened but no valid frame for index={idx}, backend={backend_name(backend)}", flush=True)
+            print(f"[CAMERA] Opened but no valid frame for index={idx}, backend={backend_name(be)}", flush=True)
             release_camera(test_cap)
 
         except Exception as e:
-            print(f"[CAMERA] Exception for index={idx}, backend={backend_name(backend)}: {e}", flush=True)
+            print(f"[CAMERA] Exception for index={idx}, backend={backend_name(be)}: {e}", flush=True)
+            release_camera(test_cap)
 
     return None
 
@@ -208,24 +334,66 @@ def reopen_camera():
     """
     Release and reopen camera if it dies during runtime.
     """
-    global cap
+    global cap, processed_track_ids
+
     print("[CAMERA] Attempting to reopen camera...", flush=True)
-    release_camera(cap)
-    cap = open_camera()
+
+    with camera_lock:
+        release_camera(cap)
+        cap = open_camera(selected_camera_index, selected_camera_backend)
 
     if cap is None:
         print("[CAMERA] Reopen failed", flush=True)
         socketio.emit("system_status", {
             "ok": False,
-            "message": "Camera Error"
+            "message": "Camera Error",
+            "camera_index": selected_camera_index,
+            "backend": backend_name(selected_camera_backend)
         })
         return False
+
+    processed_track_ids.clear()
 
     print("[CAMERA] Reopen successful", flush=True)
     socketio.emit("system_status", {
         "ok": True,
-        "message": "YOLO Tracker Live"
+        "message": f"YOLO Tracker Live | Camera {selected_camera_index} ({backend_name(selected_camera_backend)})",
+        "camera_index": selected_camera_index,
+        "backend": backend_name(selected_camera_backend)
     })
+    return True
+
+
+def switch_camera(new_index, new_backend=cv2.CAP_DSHOW):
+    global cap, selected_camera_index, selected_camera_backend, processed_track_ids
+
+    with camera_lock:
+        print(f"[CAMERA] Switching to camera index={new_index}, backend={backend_name(new_backend)}", flush=True)
+
+        release_camera(cap)
+        new_cap = open_camera(new_index, new_backend)
+
+        if new_cap is None:
+            print("[CAMERA] Switch failed", flush=True)
+            socketio.emit("system_status", {
+                "ok": False,
+                "message": f"Cannot open camera {new_index} ({backend_name(new_backend)})"
+            })
+            return False
+
+        cap = new_cap
+        selected_camera_index = new_index
+        selected_camera_backend = new_backend
+        processed_track_ids.clear()
+
+    socketio.emit("system_status", {
+        "ok": True,
+        "message": f"Using camera {new_index} ({backend_name(new_backend)})",
+        "camera_index": selected_camera_index,
+        "backend": backend_name(selected_camera_backend)
+    })
+
+    print(f"[CAMERA] Switched successfully to camera {new_index} ({backend_name(new_backend)})", flush=True)
     return True
 
 
@@ -307,7 +475,6 @@ def process_tracking_from_frame(frame):
 
     return annotated, new_detections
 
-
 # -----------------------------
 # Background loop
 # -----------------------------
@@ -334,7 +501,9 @@ def yolo_detection_loop():
         model = YOLO(MODEL_PATH)
         print(f"[YOLO] Model loaded: {MODEL_PATH}", flush=True)
 
-        cap = open_camera()
+        with camera_lock:
+            cap = open_camera(selected_camera_index, selected_camera_backend)
+
         if cap is None:
             print("[ERROR] Cannot open webcam.", flush=True)
             socketio.emit("system_status", {
@@ -345,7 +514,9 @@ def yolo_detection_loop():
 
         socketio.emit("system_status", {
             "ok": True,
-            "message": "YOLO Tracker Live"
+            "message": f"YOLO Tracker Live | Camera {selected_camera_index} ({backend_name(selected_camera_backend)})",
+            "camera_index": selected_camera_index,
+            "backend": backend_name(selected_camera_backend)
         })
 
     last_detection_run = 0.0
@@ -371,7 +542,14 @@ def yolo_detection_loop():
                 socketio.emit("trash_detected", payload)
             continue
 
-        ok, frame = cap.read()
+        with camera_lock:
+            current_cap = cap
+
+        if current_cap is None:
+            socketio.sleep(0.1)
+            continue
+
+        ok, frame = current_cap.read()
         if not ok or frame is None or frame.size == 0:
             consecutive_read_failures += 1
             if consecutive_read_failures % 5 == 0:
@@ -386,6 +564,7 @@ def yolo_detection_loop():
             continue
 
         consecutive_read_failures = 0
+        display_frame = frame.copy()
 
         now = time.time()
         run_detection = (now - last_detection_run >= DETECTION_INTERVAL_SEC)
@@ -394,7 +573,7 @@ def yolo_detection_loop():
             last_detection_run = now
             try:
                 annotated, new_items = process_tracking_from_frame(frame)
-                update_latest_frame(annotated)
+                display_frame = annotated
 
                 for item in new_items:
                     print(
@@ -411,6 +590,7 @@ def yolo_detection_loop():
             except Exception as e:
                 print(f"[YOLO] Tracking error: {e}", flush=True)
 
+        update_latest_frame(display_frame)
 
 # -----------------------------
 # Main
@@ -428,4 +608,3 @@ if __name__ == "__main__":
         allow_unsafe_werkzeug=True,
         use_reloader=False
     )
-    

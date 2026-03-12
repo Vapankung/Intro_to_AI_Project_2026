@@ -26,6 +26,43 @@
             text-align: center;
         }
 
+        .top-controls {
+            width: 90%;
+            max-width: 1100px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+            background: #fff;
+            border: 1px solid #ccc;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+
+        .top-controls label {
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .top-controls select,
+        .top-controls button {
+            padding: 8px 10px;
+            border: 1px solid #888;
+            border-radius: 6px;
+            background: #fff;
+            font-size: 14px;
+        }
+
+        .top-controls button {
+            cursor: pointer;
+        }
+
+        .top-controls button:hover {
+            background: #f0f0f0;
+        }
+
         #simulation-container {
             display: flex;
             align-items: center;
@@ -36,14 +73,14 @@
             background: #fff;
             border: 2px solid #333;
             position: relative;
-            margin-top: 180px; /* Increased to fit new UI elements */
+            margin-top: 180px;
             min-height: 160px;
             gap: 12px;
         }
 
         #stations-wrapper {
             position: absolute;
-            top: -160px; /* Increased height to fit reset buttons */
+            top: -160px;
             left: 220px;
             right: 180px;
             height: 150px;
@@ -59,10 +96,10 @@
             flex-direction: column;
             align-items: center;
             gap: 6px;
-            pointer-events: auto; /* Re-enable clicks inside the wrapper */
+            pointer-events: auto;
             cursor: pointer;
         }
-        
+
         .station-mid {
             display: flex;
             align-items: flex-end;
@@ -102,7 +139,6 @@
             transition: background-color 0.2s;
         }
 
-        /* --- New Custom CSS for Buzzers and Reset --- */
         .buzzer-wrapper {
             display: flex;
             flex-direction: column;
@@ -115,7 +151,7 @@
             color: #d32f2f;
             font-weight: bold;
             font-size: 13px;
-            font-family: 'Comic Sans MS', cursive, sans-serif; 
+            font-family: 'Comic Sans MS', cursive, sans-serif;
         }
 
         .buzzer {
@@ -123,7 +159,7 @@
             height: 30px;
             border-radius: 50%;
             border: 2px solid #333;
-            background-color: #4CAF50; /* Defaults to Green */
+            background-color: #4CAF50;
             transition: background-color 0.3s;
         }
 
@@ -152,8 +188,8 @@
             cursor: pointer;
             transition: background-color 0.2s;
         }
-        .box:hover { background-color: #eef; }
 
+        .box:hover { background-color: #eef; }
         #camera-box:hover { background-color: #fff; cursor: default; }
 
         .sub {
@@ -166,12 +202,12 @@
             flex-direction: column;
             align-items: center;
             gap: 8px;
-            width: 190px;
+            width: 220px;
         }
 
         #camera-preview {
-            width: 160px;
-            height: 120px;
+            width: 180px;
+            height: 135px;
             object-fit: cover;
             border: 2px solid #333;
             border-radius: 8px;
@@ -179,6 +215,7 @@
             cursor: pointer;
             transition: transform 0.2s;
         }
+
         #camera-preview:hover { transform: scale(1.05); }
 
         #conveyor-container {
@@ -271,7 +308,6 @@
             text-align: center;
         }
 
-        /* --- Modal CSS --- */
         .modal {
             display: none;
             position: fixed;
@@ -285,12 +321,14 @@
             align-items: center;
             flex-direction: column;
         }
+
         .modal-content-img {
             max-width: 90%;
             max-height: 80%;
             border: 4px solid #fff;
             border-radius: 8px;
         }
+
         .modal-content-text {
             background: #fff;
             padding: 20px;
@@ -301,6 +339,7 @@
             overflow-y: auto;
             font-size: 16px;
         }
+
         .close-btn {
             position: absolute;
             top: 20px;
@@ -310,6 +349,7 @@
             font-weight: bold;
             cursor: pointer;
         }
+
         ul.history-list {
             text-align: left;
             padding-left: 20px;
@@ -319,6 +359,21 @@
 <body>
 
     <h1>YOLO Waste Sorter Prototype</h1>
+
+    <div class="top-controls">
+        <label for="cameraSelect">Camera:</label>
+        <select id="cameraSelect"></select>
+
+        <label for="backendSelect">Backend:</label>
+        <select id="backendSelect">
+            <option value="CAP_DSHOW">DirectShow</option>
+            <option value="CAP_MSMF">MSMF</option>
+            <option value="AUTO">Auto</option>
+        </select>
+
+        <button id="refreshCamerasBtn" type="button">Refresh Cameras</button>
+        <button id="switchCameraBtn" type="button">Switch Camera</button>
+    </div>
 
     <div id="cam-modal" class="modal" onclick="closeModals()">
         <span class="close-btn">&times;</span>
@@ -332,7 +387,7 @@
 
     <div id="simulation-container">
         <div id="stations-wrapper">
-            
+
             <div class="station" id="station-recycle">
                 <button class="reset-bin-btn" onclick="resetBin(event, 'recycle')">RESET</button>
                 <div class="station-mid">
@@ -381,6 +436,7 @@
             <div><b>Input Cam</b></div>
             <img id="camera-preview" src="/video_feed" alt="Camera preview" title="Click to enlarge">
             <div id="cam-status" class="sub" style="color: green;">● Connecting...</div>
+            <div id="camera-choice-status" class="sub">Camera: loading...</div>
         </div>
 
         <div id="conveyor-container"></div>
@@ -414,6 +470,12 @@
         const logEl = document.getElementById("log");
         const zoneDebugEl = document.getElementById("zone-debug");
         const camStatusEl = document.getElementById("cam-status");
+        const cameraChoiceStatusEl = document.getElementById("camera-choice-status");
+
+        const cameraSelectEl = document.getElementById("cameraSelect");
+        const backendSelectEl = document.getElementById("backendSelect");
+        const refreshCamerasBtn = document.getElementById("refreshCamerasBtn");
+        const switchCameraBtn = document.getElementById("switchCameraBtn");
 
         const socket = io({
             transports: ["websocket", "polling"]
@@ -436,6 +498,28 @@
         socket.on("system_status", (data) => {
             camStatusEl.textContent = `● ${data.message}`;
             camStatusEl.style.color = data.ok ? "green" : "red";
+
+            if (data.camera_index !== undefined && data.backend !== undefined) {
+                cameraChoiceStatusEl.textContent = `Camera ${data.camera_index} | ${data.backend}`;
+            }
+        });
+
+        socket.on("camera_switched", (data) => {
+            if (data.success) {
+                cameraChoiceStatusEl.textContent = `Camera ${data.camera_index} | ${data.backend}`;
+                logEl.textContent = `Camera switched to ${data.camera_index} (${data.backend})`;
+
+                backendSelectEl.value = data.backend;
+                const match = Array.from(cameraSelectEl.options).find(
+                    opt => Number(opt.value) === Number(data.camera_index)
+                );
+                if (match) {
+                    cameraSelectEl.value = String(data.camera_index);
+                }
+            } else {
+                logEl.textContent = `Camera switch failed: ${data.error || "unknown error"}`;
+                alert("Failed to switch camera");
+            }
         });
 
         socket.on("trash_detected", (data) => {
@@ -446,14 +530,62 @@
             generateWaste(data.bin_type, data.object_name);
         });
 
+        async function loadAvailableCameras() {
+            cameraSelectEl.innerHTML = "";
+            cameraChoiceStatusEl.textContent = "Camera: scanning...";
+
+            try {
+                const res = await fetch("/available_cameras");
+                const data = await res.json();
+
+                const uniqueIndexes = [...new Set((data.cameras || []).map(c => c.index))].sort((a, b) => a - b);
+
+                if (uniqueIndexes.length === 0) {
+                    const opt = document.createElement("option");
+                    opt.value = "0";
+                    opt.textContent = "No camera found (default Camera 0)";
+                    cameraSelectEl.appendChild(opt);
+                    cameraChoiceStatusEl.textContent = "No detected camera list";
+                    return;
+                }
+
+                uniqueIndexes.forEach(idx => {
+                    const opt = document.createElement("option");
+                    opt.value = String(idx);
+                    opt.textContent = `Camera ${idx}`;
+                    cameraSelectEl.appendChild(opt);
+                });
+
+                cameraChoiceStatusEl.textContent = "Camera list loaded";
+            } catch (err) {
+                console.error(err);
+                const opt = document.createElement("option");
+                opt.value = "0";
+                opt.textContent = "Camera 0";
+                cameraSelectEl.appendChild(opt);
+                cameraChoiceStatusEl.textContent = "Camera scan failed";
+            }
+        }
+
+        switchCameraBtn.addEventListener("click", () => {
+            const selectedIndex = Number(cameraSelectEl.value || 0);
+            const selectedBackend = backendSelectEl.value || "CAP_DSHOW";
+
+            socket.emit("select_camera", {
+                camera_index: selectedIndex,
+                backend: selectedBackend
+            });
+        });
+
+        refreshCamerasBtn.addEventListener("click", loadAvailableCameras);
+
         const conveyorContainer = document.getElementById("conveyor-container");
         const conveyorSpeed = 2.0;
         const itemWidth = 40;
 
-        // --- NEW VARIABLES FOR LOGIC ---
         let isConveyorRunning = true;
         const MAX_CAPACITY = 20;
-        const YELLOW_CAPACITY = 16; 
+        const YELLOW_CAPACITY = 16;
 
         let wasteItems = [];
         let nextId = 1;
@@ -475,33 +607,30 @@
             document.getElementById(`count-${binType}`).textContent = counters[binType];
         }
 
-        // --- NEW BUZZER AND CONVEYOR LOGIC ---
         function updateBuzzer(binType) {
-            if(binType === "general") return; 
+            if (binType === "general") return;
 
             const buzzerElt = document.getElementById(`buzzer-${binType}`);
-            if(!buzzerElt) return;
+            if (!buzzerElt) return;
 
             const count = counters[binType];
             if (count >= MAX_CAPACITY) {
-                buzzerElt.style.backgroundColor = "#F44336"; // Red (100%)
+                buzzerElt.style.backgroundColor = "#F44336";
             } else if (count >= YELLOW_CAPACITY) {
-                buzzerElt.style.backgroundColor = "#FFEB3B"; // Yellow (80%)
+                buzzerElt.style.backgroundColor = "#FFEB3B";
             } else {
-                buzzerElt.style.backgroundColor = "#4CAF50"; // Green (0-79%)
+                buzzerElt.style.backgroundColor = "#4CAF50";
             }
         }
 
         function checkConveyorStatus() {
-            // Stop logic if any sorted bin is full
-            const isFull = counters.recycle >= MAX_CAPACITY || 
-                           counters.wet >= MAX_CAPACITY || 
+            const isFull = counters.recycle >= MAX_CAPACITY ||
+                           counters.wet >= MAX_CAPACITY ||
                            counters.hazardous >= MAX_CAPACITY;
-                           
+
             isConveyorRunning = !isFull;
 
-            // Pause or play CSS animation for Conveyor background
-            if(isConveyorRunning) {
+            if (isConveyorRunning) {
                 conveyorContainer.style.animationPlayState = "running";
             } else {
                 conveyorContainer.style.animationPlayState = "paused";
@@ -509,11 +638,11 @@
         }
 
         function resetBin(e, binType) {
-            e.stopPropagation(); // prevent triggering the History Modal
+            e.stopPropagation();
 
             counters[binType] = 0;
             binHistory[binType] = [];
-            
+
             updateCounterDisplay(binType);
             updateBuzzer(binType);
             checkConveyorStatus();
@@ -529,7 +658,7 @@
             updateCounterDisplay("wet");
             updateCounterDisplay("hazardous");
             updateCounterDisplay("general");
-            
+
             binHistory.recycle = [];
             binHistory.wet = [];
             binHistory.hazardous = [];
@@ -552,8 +681,7 @@
         }
 
         function generateWaste(type, label) {
-            // Prevent new physical items on the belt if stopped
-            if(!isConveyorRunning) return; 
+            if (!isConveyorRunning) return;
 
             type = normalizeBinType(type);
 
@@ -570,7 +698,7 @@
                 type: type,
                 active: true,
                 collected: false,
-                originalLabel: label 
+                originalLabel: label
             });
         }
 
@@ -630,8 +758,6 @@
 
             counters[binType] += 1;
             updateCounterDisplay(binType);
-            
-            // --- UPDATE BUZZER AND BELT STATUS ---
             updateBuzzer(binType);
             checkConveyorStatus();
 
@@ -646,8 +772,7 @@
         function gameLoop() {
             const conveyorWidth = conveyorContainer.offsetWidth;
 
-            // Only move objects forward if the conveyor isn't halted
-            if(isConveyorRunning) {
+            if (isConveyorRunning) {
                 for (let i = wasteItems.length - 1; i >= 0; i--) {
                     const item = wasteItems[i];
                     if (!item.active) continue;
@@ -672,7 +797,6 @@
             requestAnimationFrame(gameLoop);
         }
 
-        // --- Modal Event Listeners ---
         function closeModals() {
             document.getElementById("cam-modal").style.display = "none";
             document.getElementById("history-modal").style.display = "none";
@@ -681,7 +805,7 @@
         function showHistoryModal(binType) {
             const hist = binHistory[binType];
             const content = document.getElementById("history-content");
-            
+
             let html = `<h2 style="margin-top:0; text-transform:capitalize;">${binType} Bin History</h2>`;
             if (hist.length === 0) {
                 html += `<p>No items detected yet.</p>`;
@@ -692,7 +816,7 @@
                 });
                 html += `</ul>`;
             }
-            
+
             content.innerHTML = html;
             document.getElementById("history-modal").style.display = "flex";
         }
@@ -700,7 +824,7 @@
         document.getElementById("camera-preview").addEventListener("click", function() {
             const modal = document.getElementById("cam-modal");
             const modalImg = document.getElementById("modal-img-src");
-            modalImg.src = this.src; 
+            modalImg.src = this.src;
             modal.style.display = "flex";
         });
 
@@ -709,9 +833,9 @@
         document.getElementById("station-hazardous").addEventListener("click", () => showHistoryModal("hazardous"));
         document.getElementById("station-general").addEventListener("click", () => showHistoryModal("general"));
 
-        window.addEventListener("load", () => {
+        window.addEventListener("load", async () => {
+            await loadAvailableCameras();
             recalculateZones();
-            // Initialize Default States
             updateBuzzer("recycle");
             updateBuzzer("wet");
             updateBuzzer("hazardous");
