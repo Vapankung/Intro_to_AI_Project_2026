@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>YOLO Waste Sorter Prototype</title>
 
-    <!-- Socket.IO client -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 
     <style>
@@ -32,21 +31,22 @@
             align-items: center;
             justify-content: center;
             width: 90%;
-            max-width: 1000px;
+            max-width: 1100px;
             padding: 20px;
             background: #fff;
             border: 2px solid #333;
             position: relative;
-            margin-top: 140px;
-            min-height: 120px;
+            margin-top: 180px; /* Increased to fit new UI elements */
+            min-height: 160px;
+            gap: 12px;
         }
 
         #stations-wrapper {
             position: absolute;
-            top: -125px;
-            left: 160px;
-            right: 160px;
-            height: 120px;
+            top: -160px; /* Increased height to fit reset buttons */
+            left: 220px;
+            right: 180px;
+            height: 150px;
             display: flex;
             justify-content: space-around;
             align-items: flex-end;
@@ -54,16 +54,34 @@
         }
 
         .station {
-            width: 110px;
+            width: auto;
             display: flex;
             flex-direction: column;
             align-items: center;
             gap: 6px;
+            pointer-events: auto; /* Re-enable clicks inside the wrapper */
+            cursor: pointer;
         }
+        
+        .station-mid {
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+        }
+
+        .station:hover .bin { background-color: #eef; }
 
         .station-title {
             font-weight: bold;
             font-size: 14px;
+            text-align: center;
+        }
+
+        .bin-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
         }
 
         .bin {
@@ -74,26 +92,94 @@
             border-radius: 6px 6px 0 0;
             background: #fff;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
             text-align: center;
             line-height: 1.15;
             padding: 4px;
             font-size: 13px;
+            transition: background-color 0.2s;
+        }
+
+        /* --- New Custom CSS for Buzzers and Reset --- */
+        .buzzer-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 5px;
+        }
+
+        .buzzer-label {
+            color: #d32f2f;
+            font-weight: bold;
+            font-size: 13px;
+            font-family: 'Comic Sans MS', cursive, sans-serif; 
+        }
+
+        .buzzer {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 2px solid #333;
+            background-color: #4CAF50; /* Defaults to Green */
+            transition: background-color 0.3s;
+        }
+
+        .reset-bin-btn {
+            background: #fff;
+            border: 2px solid #FFC107;
+            color: #F57F17;
+            font-weight: bold;
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        .reset-bin-btn:hover {
+            background: #FFF8E1;
         }
 
         .box {
             border: 3px solid #333;
             background: #fff;
-            padding: 14px;
-            min-width: 128px;
+            padding: 10px;
+            min-width: 180px;
             text-align: center;
+            cursor: pointer;
+            transition: background-color 0.2s;
         }
+        .box:hover { background-color: #eef; }
+
+        #camera-box:hover { background-color: #fff; cursor: default; }
 
         .sub {
             font-size: 12px;
             color: #666;
         }
+
+        #camera-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            width: 190px;
+        }
+
+        #camera-preview {
+            width: 160px;
+            height: 120px;
+            object-fit: cover;
+            border: 2px solid #333;
+            border-radius: 8px;
+            background: #000;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        #camera-preview:hover { transform: scale(1.05); }
 
         #conveyor-container {
             flex: 1;
@@ -143,7 +229,7 @@
 
         #status-panel {
             width: 90%;
-            max-width: 1000px;
+            max-width: 1100px;
             margin-top: 14px;
             display: grid;
             gap: 8px;
@@ -160,7 +246,7 @@
 
         .controls {
             width: 90%;
-            max-width: 1000px;
+            max-width: 1100px;
             margin-top: 10px;
             display: flex;
             gap: 8px;
@@ -168,7 +254,7 @@
             justify-content: center;
         }
 
-        button {
+        button.global-btn {
             border: 1px solid #777;
             background: #fff;
             padding: 8px 12px;
@@ -176,7 +262,7 @@
             cursor: pointer;
         }
 
-        button:hover { background: #f0f0f0; }
+        button.global-btn:hover { background: #f0f0f0; }
 
         .note {
             margin-top: 8px;
@@ -184,42 +270,122 @@
             font-size: 12px;
             text-align: center;
         }
+
+        /* --- Modal CSS --- */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        .modal-content-img {
+            max-width: 90%;
+            max-height: 80%;
+            border: 4px solid #fff;
+            border-radius: 8px;
+        }
+        .modal-content-text {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            min-width: 300px;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+            font-size: 16px;
+        }
+        .close-btn {
+            position: absolute;
+            top: 20px;
+            right: 40px;
+            color: white;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        ul.history-list {
+            text-align: left;
+            padding-left: 20px;
+        }
     </style>
 </head>
 <body>
 
     <h1>YOLO Waste Sorter Prototype</h1>
 
+    <div id="cam-modal" class="modal" onclick="closeModals()">
+        <span class="close-btn">&times;</span>
+        <img class="modal-content-img" id="modal-img-src" src="">
+    </div>
+
+    <div id="history-modal" class="modal" onclick="if(event.target === this) closeModals()">
+        <span class="close-btn" onclick="closeModals()">&times;</span>
+        <div class="modal-content-text" id="history-content"></div>
+    </div>
+
     <div id="simulation-container">
-        <!-- Top bins -->
         <div id="stations-wrapper">
+            
             <div class="station" id="station-recycle">
-                <div class="station-title">Recycle</div>
-                <div class="bin">Count: <span id="count-recycle">0</span></div>
+                <button class="reset-bin-btn" onclick="resetBin(event, 'recycle')">RESET</button>
+                <div class="station-mid">
+                    <div class="buzzer-wrapper">
+                        <span class="buzzer-label">Buzzer</span>
+                        <div class="buzzer" id="buzzer-recycle"></div>
+                    </div>
+                    <div class="bin-wrapper">
+                        <div class="station-title">Recycle</div>
+                        <div class="bin">Count: <span id="count-recycle">0</span></div>
+                    </div>
+                </div>
             </div>
 
             <div class="station" id="station-wet">
-                <div class="station-title">Wet</div>
-                <div class="bin">Count: <span id="count-wet">0</span></div>
+                <button class="reset-bin-btn" onclick="resetBin(event, 'wet')">RESET</button>
+                <div class="station-mid">
+                    <div class="buzzer-wrapper">
+                        <span class="buzzer-label">Buzzer</span>
+                        <div class="buzzer" id="buzzer-wet"></div>
+                    </div>
+                    <div class="bin-wrapper">
+                        <div class="station-title">Wet</div>
+                        <div class="bin">Count: <span id="count-wet">0</span></div>
+                    </div>
+                </div>
             </div>
 
             <div class="station" id="station-hazardous">
-                <div class="station-title">Hazardous</div>
-                <div class="bin">Count: <span id="count-hazardous">0</span></div>
+                <button class="reset-bin-btn" onclick="resetBin(event, 'hazardous')">RESET</button>
+                <div class="station-mid">
+                    <div class="buzzer-wrapper">
+                        <span class="buzzer-label">Buzzer</span>
+                        <div class="buzzer" id="buzzer-hazardous"></div>
+                    </div>
+                    <div class="bin-wrapper">
+                        <div class="station-title">Hazardous</div>
+                        <div class="bin">Count: <span id="count-hazardous">0</span></div>
+                    </div>
+                </div>
             </div>
+
         </div>
 
-        <!-- Input camera box -->
-        <div class="box">
+        <div class="box" id="camera-box">
             <div><b>Input Cam</b></div>
-            <div id="cam-status" class="sub" style="color: green;">● Prototype Mode</div>
+            <img id="camera-preview" src="/video_feed" alt="Camera preview" title="Click to enlarge">
+            <div id="cam-status" class="sub" style="color: green;">● Connecting...</div>
         </div>
 
-        <!-- Conveyor -->
         <div id="conveyor-container"></div>
 
-        <!-- General box -->
-        <div class="box">
+        <div class="box" id="station-general">
             <div><b>General</b></div>
             <div>Count: <span id="count-general">0</span></div>
         </div>
@@ -232,29 +398,28 @@
     </div>
 
     <div class="controls">
-        <!-- Manual test buttons (useful even if server not sending) -->
-        <button onclick="generateWaste('recycle', 'manual_bottle')">Test Recycle</button>
-        <button onclick="generateWaste('wet', 'manual_peel')">Test Wet</button>
-        <button onclick="generateWaste('hazardous', 'manual_battery')">Test Hazardous</button>
-        <button onclick="generateWaste('general', 'manual_tissue')">Test General</button>
-        <button onclick="resetCounters()">Reset Counters</button>
+        <button class="global-btn" onclick="generateWaste('recycle', 'manual_bottle')">Test Recycle</button>
+        <button class="global-btn" onclick="generateWaste('wet', 'manual_banana')">Test Wet</button>
+        <button class="global-btn" onclick="generateWaste('hazardous', 'manual_phone')">Test Hazardous</button>
+        <button class="global-btn" onclick="generateWaste('general', 'manual_cup')">Test General</button>
+        <button class="global-btn" onclick="resetCounters()">Reset Counters (All)</button>
     </div>
 
     <div class="note">
-        Flask server simulates detections and sends them to this page via Socket.IO.
+        Webcam → YOLO Tracker → mapped into recycle / wet / hazardous / general
     </div>
 
     <script>
-        // -----------------------------
-        // Socket.IO connection
-        // -----------------------------
         const connectionStatusEl = document.getElementById("connection-status");
         const logEl = document.getElementById("log");
         const zoneDebugEl = document.getElementById("zone-debug");
+        const camStatusEl = document.getElementById("cam-status");
 
         const socket = io({
             transports: ["websocket", "polling"]
         });
+
+        const binHistory = { recycle: [], wet: [], hazardous: [], general: [] };
 
         socket.on("connect", () => {
             connectionStatusEl.textContent = `Socket: Connected (id=${socket.id})`;
@@ -268,6 +433,11 @@
             connectionStatusEl.textContent = "Socket Error: " + err.message;
         });
 
+        socket.on("system_status", (data) => {
+            camStatusEl.textContent = `● ${data.message}`;
+            camStatusEl.style.color = data.ok ? "green" : "red";
+        });
+
         socket.on("trash_detected", (data) => {
             const conf = (typeof data.confidence === "number")
                 ? ` (${Math.round(data.confidence * 100)}%)`
@@ -276,12 +446,14 @@
             generateWaste(data.bin_type, data.object_name);
         });
 
-        // -----------------------------
-        // Conveyor simulation state
-        // -----------------------------
         const conveyorContainer = document.getElementById("conveyor-container");
-        const conveyorSpeed = 2.0; // px per frame
+        const conveyorSpeed = 2.0;
         const itemWidth = 40;
+
+        // --- NEW VARIABLES FOR LOGIC ---
+        let isConveyorRunning = true;
+        const MAX_CAPACITY = 20;
+        const YELLOW_CAPACITY = 16; 
 
         let wasteItems = [];
         let nextId = 1;
@@ -303,6 +475,50 @@
             document.getElementById(`count-${binType}`).textContent = counters[binType];
         }
 
+        // --- NEW BUZZER AND CONVEYOR LOGIC ---
+        function updateBuzzer(binType) {
+            if(binType === "general") return; 
+
+            const buzzerElt = document.getElementById(`buzzer-${binType}`);
+            if(!buzzerElt) return;
+
+            const count = counters[binType];
+            if (count >= MAX_CAPACITY) {
+                buzzerElt.style.backgroundColor = "#F44336"; // Red (100%)
+            } else if (count >= YELLOW_CAPACITY) {
+                buzzerElt.style.backgroundColor = "#FFEB3B"; // Yellow (80%)
+            } else {
+                buzzerElt.style.backgroundColor = "#4CAF50"; // Green (0-79%)
+            }
+        }
+
+        function checkConveyorStatus() {
+            // Stop logic if any sorted bin is full
+            const isFull = counters.recycle >= MAX_CAPACITY || 
+                           counters.wet >= MAX_CAPACITY || 
+                           counters.hazardous >= MAX_CAPACITY;
+                           
+            isConveyorRunning = !isFull;
+
+            // Pause or play CSS animation for Conveyor background
+            if(isConveyorRunning) {
+                conveyorContainer.style.animationPlayState = "running";
+            } else {
+                conveyorContainer.style.animationPlayState = "paused";
+            }
+        }
+
+        function resetBin(e, binType) {
+            e.stopPropagation(); // prevent triggering the History Modal
+
+            counters[binType] = 0;
+            binHistory[binType] = [];
+            
+            updateCounterDisplay(binType);
+            updateBuzzer(binType);
+            checkConveyorStatus();
+        }
+
         function resetCounters() {
             counters.recycle = 0;
             counters.wet = 0;
@@ -313,6 +529,16 @@
             updateCounterDisplay("wet");
             updateCounterDisplay("hazardous");
             updateCounterDisplay("general");
+            
+            binHistory.recycle = [];
+            binHistory.wet = [];
+            binHistory.hazardous = [];
+            binHistory.general = [];
+
+            updateBuzzer("recycle");
+            updateBuzzer("wet");
+            updateBuzzer("hazardous");
+            checkConveyorStatus();
         }
 
         function normalizeBinType(type) {
@@ -321,12 +547,14 @@
         }
 
         function shortLabel(name) {
-            // e.g. plastic_bottle -> PLA
             const clean = String(name || "item").replace(/[^a-zA-Z0-9]/g, "");
             return clean.substring(0, 3).toUpperCase() || "ITM";
         }
 
         function generateWaste(type, label) {
+            // Prevent new physical items on the belt if stopped
+            if(!isConveyorRunning) return; 
+
             type = normalizeBinType(type);
 
             const el = document.createElement("div");
@@ -341,7 +569,8 @@
                 position: 0,
                 type: type,
                 active: true,
-                collected: false
+                collected: false,
+                originalLabel: label 
             });
         }
 
@@ -349,8 +578,6 @@
             const stationEl = document.getElementById(stationId);
             const stationRect = stationEl.getBoundingClientRect();
             const conveyorRect = conveyorContainer.getBoundingClientRect();
-
-            // Convert station center X into conveyor-local X coordinate
             return (stationRect.left + stationRect.width / 2) - conveyorRect.left;
         }
 
@@ -358,7 +585,7 @@
             const conveyorWidth = conveyorContainer.offsetWidth;
             if (!conveyorWidth) return;
 
-            const halfWidth = 35; // width of "push zone"
+            const halfWidth = 35;
 
             const recycleCenter = stationCenterXRelativeToConveyor("station-recycle");
             const wetCenter = stationCenterXRelativeToConveyor("station-wet");
@@ -390,16 +617,24 @@
             item.active = false;
 
             if (binType !== "general") {
-                item.element.style.top = "-50px";   // fly upward into top bin
+                item.element.style.top = "-50px";
                 item.element.style.opacity = "0";
             } else {
-                item.element.style.opacity = "0";   // disappear at end into general
+                item.element.style.opacity = "0";
             }
+
+            binHistory[binType].push({
+                label: item.originalLabel,
+                time: new Date().toLocaleTimeString()
+            });
 
             counters[binType] += 1;
             updateCounterDisplay(binType);
+            
+            // --- UPDATE BUZZER AND BELT STATUS ---
+            updateBuzzer(binType);
+            checkConveyorStatus();
 
-            // Safe removal by unique ID
             setTimeout(() => {
                 if (item.element && item.element.parentNode) {
                     item.element.remove();
@@ -411,35 +646,75 @@
         function gameLoop() {
             const conveyorWidth = conveyorContainer.offsetWidth;
 
-            // Iterate backwards for safer handling
-            for (let i = wasteItems.length - 1; i >= 0; i--) {
-                const item = wasteItems[i];
-                if (!item.active) continue;
+            // Only move objects forward if the conveyor isn't halted
+            if(isConveyorRunning) {
+                for (let i = wasteItems.length - 1; i >= 0; i--) {
+                    const item = wasteItems[i];
+                    if (!item.active) continue;
 
-                item.position += conveyorSpeed;
-                item.element.style.left = item.position + "px";
+                    item.position += conveyorSpeed;
+                    item.element.style.left = item.position + "px";
 
-                // Auto-sort to special bin when entering matching zone
-                if (zones[item.type]) {
-                    const z = zones[item.type];
-                    if (item.position > z.start && item.position < z.end) {
-                        collectItem(item, item.type);
-                        continue;
+                    if (zones[item.type]) {
+                        const z = zones[item.type];
+                        if (item.position > z.start && item.position < z.end) {
+                            collectItem(item, item.type);
+                            continue;
+                        }
                     }
-                }
 
-                // End of conveyor -> General
-                if (item.position > (conveyorWidth - itemWidth)) {
-                    collectItem(item, "general");
+                    if (item.position > (conveyorWidth - itemWidth)) {
+                        collectItem(item, "general");
+                    }
                 }
             }
 
             requestAnimationFrame(gameLoop);
         }
 
-        // Init
+        // --- Modal Event Listeners ---
+        function closeModals() {
+            document.getElementById("cam-modal").style.display = "none";
+            document.getElementById("history-modal").style.display = "none";
+        }
+
+        function showHistoryModal(binType) {
+            const hist = binHistory[binType];
+            const content = document.getElementById("history-content");
+            
+            let html = `<h2 style="margin-top:0; text-transform:capitalize;">${binType} Bin History</h2>`;
+            if (hist.length === 0) {
+                html += `<p>No items detected yet.</p>`;
+            } else {
+                html += `<ul class="history-list">`;
+                [...hist].reverse().forEach(h => {
+                    html += `<li><strong>${h.time}</strong> - ${h.label}</li>`;
+                });
+                html += `</ul>`;
+            }
+            
+            content.innerHTML = html;
+            document.getElementById("history-modal").style.display = "flex";
+        }
+
+        document.getElementById("camera-preview").addEventListener("click", function() {
+            const modal = document.getElementById("cam-modal");
+            const modalImg = document.getElementById("modal-img-src");
+            modalImg.src = this.src; 
+            modal.style.display = "flex";
+        });
+
+        document.getElementById("station-recycle").addEventListener("click", () => showHistoryModal("recycle"));
+        document.getElementById("station-wet").addEventListener("click", () => showHistoryModal("wet"));
+        document.getElementById("station-hazardous").addEventListener("click", () => showHistoryModal("hazardous"));
+        document.getElementById("station-general").addEventListener("click", () => showHistoryModal("general"));
+
         window.addEventListener("load", () => {
             recalculateZones();
+            // Initialize Default States
+            updateBuzzer("recycle");
+            updateBuzzer("wet");
+            updateBuzzer("hazardous");
             requestAnimationFrame(gameLoop);
         });
 
