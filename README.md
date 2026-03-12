@@ -32,6 +32,9 @@ pip install -r requirements.txt
 
 ### Step 4 — Navigate to the Project Folder
 
+```bash
+cd AI_webtest
+```
 Start the web application:
 ```bash
 python app.py
@@ -41,4 +44,5 @@ Then open the browser to go to
 ```bash
 http://127.0.0.1:50000
 ```
+
 
