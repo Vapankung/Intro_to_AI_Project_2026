@@ -20,7 +20,7 @@ PORT = 50000
 SIMULATION_MODE = False
 DETECTION_INTERVAL_SEC = 0.05
 CONFIDENCE_THRESHOLD = 0.45
-MODEL_PATH = "best (2).pt"
+MODEL_PATH = "best_test.pt"
 IMGSZ = 416
 
 # Camera config
@@ -46,6 +46,7 @@ MAX_CONSECUTIVE_READ_FAILURES = 30
 # YOLO object -> waste bin
 # -----------------------------
 YOLO_MAPPING = {
+
     # recycle
     "Glass Bottle": "recycle",
     "Plastic Bottle": "recycle",
@@ -57,6 +58,19 @@ YOLO_MAPPING = {
     "Syringe": "hazardous",
     "Light Bulb": "hazardous",
     "Battery": "hazardous",
+
+    # wet / organic
+    "Food left over": "wet",
+    "Food on a plate": "wet",
+    "Plant": "wet",
+    "Feces": "wet",
+
+    # general waste
+    "Cloth": "general",
+    "Clothe": "general",
+    "Foam box": "general",
+    "Plastic bag": "general",
+    "Snack bag": "general"
 }
 
 # -----------------------------
@@ -414,3 +428,4 @@ if __name__ == "__main__":
         allow_unsafe_werkzeug=True,
         use_reloader=False
     )
+    
