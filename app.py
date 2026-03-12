@@ -20,7 +20,7 @@ PORT = 50000
 SIMULATION_MODE = False
 DETECTION_INTERVAL_SEC = 0.05
 CONFIDENCE_THRESHOLD = 0.45
-MODEL_PATH = "best_test.pt"
+MODEL_PATH = "best (3).pt"
 IMGSZ = 416
 
 # Camera config
@@ -46,7 +46,6 @@ MAX_CONSECUTIVE_READ_FAILURES = 30
 # YOLO object -> waste bin
 # -----------------------------
 YOLO_MAPPING = {
-
     # recycle
     "Glass Bottle": "recycle",
     "Plastic Bottle": "recycle",
