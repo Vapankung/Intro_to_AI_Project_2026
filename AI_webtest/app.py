@@ -17,49 +17,46 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 # Config
 # -----------------------------
 PORT = 50000
-SIMULATION_MODE = False          # True = fake detections, False = real webcam + YOLO Tracker
-DETECTION_INTERVAL_SEC = 0.05    # Run tracker fast to maintain ID continuity
+SIMULATION_MODE = False
+DETECTION_INTERVAL_SEC = 0.05
 CONFIDENCE_THRESHOLD = 0.45
-MODEL_PATH = "yolo26n.pt"        # Make sure you have your specific model here
+MODEL_PATH = "best (2).pt"
 IMGSZ = 416
 
+# Camera config
+CAMERA_CANDIDATES = [
+    (0, cv2.CAP_DSHOW),
+    (0, cv2.CAP_MSMF),
+    (0, None),
+    (1, cv2.CAP_DSHOW),
+    (1, cv2.CAP_MSMF),
+    (1, None),
+    (2, cv2.CAP_DSHOW),
+    (2, cv2.CAP_MSMF),
+    (2, None),
+]
+CAMERA_WIDTH = 640
+CAMERA_HEIGHT = 480
+CAMERA_WARMUP_SEC = 1.0
+CAMERA_READ_RETRIES = 15
+CAMERA_RETRY_DELAY_SEC = 0.1
+MAX_CONSECUTIVE_READ_FAILURES = 30
+
 # -----------------------------
-# COCO object -> waste bin
+# YOLO object -> waste bin
 # -----------------------------
 YOLO_MAPPING = {
     # recycle
-    "bottle": "recycle",
-    "wine glass": "recycle",
-    "book": "recycle",
-
-    # wet
-    "banana": "wet",
-    "apple": "wet",
-    "orange": "wet",
-    "broccoli": "wet",
-    "carrot": "wet",
-    "sandwich": "wet",
-    "pizza": "wet",
-    "donut": "wet",
-    "cake": "wet",
+    "Glass Bottle": "recycle",
+    "Plastic Bottle": "recycle",
+    "Can": "recycle",
+    "Paper": "recycle",
 
     # hazardous
-    "cell phone": "hazardous",
-    "laptop": "hazardous",
-    "mouse": "hazardous",
-    "keyboard": "hazardous",
-    "remote": "hazardous",
-    "tv": "hazardous",
-
-    # general
-    "cup": "general",
-    "bowl": "general",
-    "fork": "general",
-    "knife": "general",
-    "spoon": "general",
-    "scissors": "general",
-    "toothbrush": "general",
-    "teddy bear": "general",
+    "Electronic": "hazardous",
+    "Syringe": "hazardous",
+    "Light Bulb": "hazardous",
+    "Battery": "hazardous",
 }
 
 # -----------------------------
@@ -71,8 +68,6 @@ cap = None
 latest_jpeg = None
 frame_lock = threading.Lock()
 
-# TRACKING STATE
-# Keep a set of all unique object IDs the tracker has seen and processed
 processed_track_ids = set()
 
 # -----------------------------
@@ -120,37 +115,105 @@ def get_simulated_detection():
     confidence = round(random.uniform(0.70, 0.98), 2)
     return detected_class, confidence
 
-def open_camera():
-    candidates = [
-        (0, None),
-        (0, cv2.CAP_MSMF),
-        (0, cv2.CAP_DSHOW),
-        (1, None),
-        (1, cv2.CAP_MSMF),
-        (1, cv2.CAP_DSHOW),
-    ]
 
-    for idx, backend in candidates:
+def backend_name(backend):
+    if backend is None:
+        return "AUTO"
+    if backend == cv2.CAP_DSHOW:
+        return "CAP_DSHOW"
+    if backend == cv2.CAP_MSMF:
+        return "CAP_MSMF"
+    return str(backend)
+
+
+def release_camera(camera):
+    try:
+        if camera is not None:
+            camera.release()
+    except Exception as e:
+        print(f"[CAMERA] Release error: {e}", flush=True)
+
+
+def try_read_valid_frame(camera, retries=CAMERA_READ_RETRIES, delay=CAMERA_RETRY_DELAY_SEC):
+    """
+    Try reading several times because many webcams return bad/empty frames at startup.
+    """
+    for attempt in range(1, retries + 1):
+        ok, frame = camera.read()
+        if ok and frame is not None and frame.size > 0:
+            return True, frame
+        print(f"[CAMERA] Read attempt {attempt}/{retries} failed", flush=True)
+        time.sleep(delay)
+    return False, None
+
+
+def open_camera():
+    """
+    Open a webcam using several index/backend combinations.
+    """
+    for idx, backend in CAMERA_CANDIDATES:
         try:
+            print(f"[CAMERA] Trying index={idx}, backend={backend_name(backend)}", flush=True)
+
             if backend is None:
                 test_cap = cv2.VideoCapture(idx)
             else:
                 test_cap = cv2.VideoCapture(idx, backend)
 
             if not test_cap.isOpened():
-                test_cap.release()
+                print(f"[CAMERA] isOpened() failed for index={idx}, backend={backend_name(backend)}", flush=True)
+                release_camera(test_cap)
                 continue
 
-            ok, frame = test_cap.read()
-            if ok and frame is not None and frame.size > 0 and frame.mean() > 1:
-                print(f"[CAMERA] Opened camera index={idx}, backend={backend}", flush=True)
+            # Set resolution early
+            test_cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+            test_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+
+            # Warm up camera
+            time.sleep(CAMERA_WARMUP_SEC)
+
+            ok, frame = try_read_valid_frame(test_cap)
+            if ok:
+                h, w = frame.shape[:2]
+                print(
+                    f"[CAMERA] Opened successfully index={idx}, backend={backend_name(backend)}, frame={w}x{h}",
+                    flush=True
+                )
                 return test_cap
 
-            test_cap.release()
-        except Exception:
-            pass
+            print(f"[CAMERA] Opened but no valid frame for index={idx}, backend={backend_name(backend)}", flush=True)
+            release_camera(test_cap)
+
+        except Exception as e:
+            print(f"[CAMERA] Exception for index={idx}, backend={backend_name(backend)}: {e}", flush=True)
 
     return None
+
+
+def reopen_camera():
+    """
+    Release and reopen camera if it dies during runtime.
+    """
+    global cap
+    print("[CAMERA] Attempting to reopen camera...", flush=True)
+    release_camera(cap)
+    cap = open_camera()
+
+    if cap is None:
+        print("[CAMERA] Reopen failed", flush=True)
+        socketio.emit("system_status", {
+            "ok": False,
+            "message": "Camera Error"
+        })
+        return False
+
+    print("[CAMERA] Reopen successful", flush=True)
+    socketio.emit("system_status", {
+        "ok": True,
+        "message": "YOLO Tracker Live"
+    })
+    return True
+
 
 def update_latest_frame(frame):
     global latest_jpeg
@@ -159,6 +222,7 @@ def update_latest_frame(frame):
     if ok:
         with frame_lock:
             latest_jpeg = buffer.tobytes()
+
 
 def mjpeg_generator():
     global latest_jpeg
@@ -177,23 +241,27 @@ def mjpeg_generator():
             b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
         )
 
+
 def process_tracking_from_frame(frame):
     """
-    Uses YOLO built-in tracking (ByteTrack) to identify objects and their unique IDs.
+    Use YOLO built-in tracking to identify objects and their unique IDs.
     Returns the annotated frame and a list of new detections to broadcast.
     """
-    global processed_track_ids
-    
-    # We use .track() instead of model()
-    # persist=True tells the model to keep tracking IDs across consecutive frames
-    # tracker="bytetrack.yaml" is great for mechanical/conveyor movement
-    results = model.track(frame, imgsz=IMGSZ, conf=CONFIDENCE_THRESHOLD, persist=True, tracker="bytetrack.yaml", verbose=False)
+    global processed_track_ids, model
+
+    results = model.track(
+        frame,
+        imgsz=IMGSZ,
+        conf=CONFIDENCE_THRESHOLD,
+        persist=True,
+        tracker="bytetrack.yaml",
+        verbose=False
+    )
     r = results[0]
 
     annotated = r.plot()
     new_detections = []
 
-    # If nothing is detected or tracking IDs haven't initialized yet
     if r.boxes is None or r.boxes.id is None:
         return annotated, new_detections
 
@@ -204,14 +272,11 @@ def process_tracking_from_frame(frame):
 
     for i in range(len(track_ids)):
         t_id = int(track_ids[i])
-        
-        # If this is a brand new object the tracker hasn't processed yet
+
         if t_id not in processed_track_ids:
             processed_track_ids.add(t_id)
-            
-            # To prevent memory from growing infinitely over weeks of uptime
+
             if len(processed_track_ids) > 10000:
-                # Remove random elements or just clear it (clearing is fine for prototypes)
                 processed_track_ids.clear()
                 processed_track_ids.add(t_id)
 
@@ -228,6 +293,7 @@ def process_tracking_from_frame(frame):
 
     return annotated, new_detections
 
+
 # -----------------------------
 # Background loop
 # -----------------------------
@@ -239,8 +305,15 @@ def yolo_detection_loop():
 
     if SIMULATION_MODE:
         blank = 255 * (cv2.UMat(180, 240, cv2.CV_8UC3).get())
-        cv2.putText(blank, "Prototype Mode", (20, 90),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+        cv2.putText(
+            blank,
+            "Prototype Mode",
+            (20, 90),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (0, 0, 0),
+            2
+        )
         update_latest_frame(blank)
     else:
         print("[YOLO] Loading model...", flush=True)
@@ -256,23 +329,19 @@ def yolo_detection_loop():
             })
             return
 
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-
         socketio.emit("system_status", {
             "ok": True,
             "message": "YOLO Tracker Live"
         })
 
     last_detection_run = 0.0
+    consecutive_read_failures = 0
 
     while True:
-        # Reduced sleep to give the tracker more frames per second for smooth ID mapping
-        socketio.sleep(0.01) 
+        socketio.sleep(0.01)
 
         if SIMULATION_MODE:
             now = time.time()
-            # Simulation can still use the 1-second interval
             if now - last_detection_run >= 1.0:
                 last_detection_run = now
                 detected_class, confidence = get_simulated_detection()
@@ -289,27 +358,44 @@ def yolo_detection_loop():
             continue
 
         ok, frame = cap.read()
-        if not ok or frame is None:
+        if not ok or frame is None or frame.size == 0:
+            consecutive_read_failures += 1
+            if consecutive_read_failures % 5 == 0:
+                print(f"[CAMERA] Runtime read failure count = {consecutive_read_failures}", flush=True)
+
+            if consecutive_read_failures >= MAX_CONSECUTIVE_READ_FAILURES:
+                print("[CAMERA] Too many read failures, reopening camera...", flush=True)
+                success = reopen_camera()
+                consecutive_read_failures = 0
+                if not success:
+                    socketio.sleep(1.0)
             continue
 
-        if frame.mean() < 2:
-            continue
+        consecutive_read_failures = 0
 
         now = time.time()
         run_detection = (now - last_detection_run >= DETECTION_INTERVAL_SEC)
 
         if run_detection:
             last_detection_run = now
-            annotated, new_items = process_tracking_from_frame(frame)
-            update_latest_frame(annotated)
+            try:
+                annotated, new_items = process_tracking_from_frame(frame)
+                update_latest_frame(annotated)
 
-            for item in new_items:
-                print(f"[TRACK ID: {item['track_id']}] {item['object_name']} ({item['confidence']:.2f}) -> {item['bin_type']}", flush=True)
-                socketio.emit("trash_detected", {
-                    "object_name": item["object_name"],
-                    "bin_type": item["bin_type"],
-                    "confidence": item["confidence"]
-                })
+                for item in new_items:
+                    print(
+                        f"[TRACK ID: {item['track_id']}] "
+                        f"{item['object_name']} ({item['confidence']:.2f}) -> {item['bin_type']}",
+                        flush=True
+                    )
+                    socketio.emit("trash_detected", {
+                        "object_name": item["object_name"],
+                        "bin_type": item["bin_type"],
+                        "confidence": item["confidence"]
+                    })
+
+            except Exception as e:
+                print(f"[YOLO] Tracking error: {e}", flush=True)
 
 
 # -----------------------------
