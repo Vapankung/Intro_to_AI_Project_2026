@@ -34,10 +34,11 @@ pip install -r requirements.txt
 
 Start the web application:
 ```bash
-pip install -r requirements.txt
+python app.py
 ```
 Then open the browser to go to
 
 ```bash
 http://127.0.0.1:50000
 ```
+
