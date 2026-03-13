@@ -24,9 +24,9 @@ venv\Scripts\activate
 
 ### Step 3 — Install Required Packages
 
-Install all dependencies from `requirements.txt`:
+Install all dependencies :
 ```bash
-pip install -r requirements.txt
+pip install flask flask-socketio ultralytics opencv-python
 ```
 ---
 
